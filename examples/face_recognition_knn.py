@@ -1,34 +1,24 @@
+#!/usr/bin/python3
 """
 This is an example of using the k-nearest-neighbors (KNN) algorithm for face recognition.
-
 When should I use this example?
 This example is useful when you wish to recognize a large set of known people,
 and make a prediction for an unknown person in a feasible computation time.
-
 Algorithm Description:
 The knn classifier is first trained on a set of labeled (known) faces and can then predict the person
 in an unknown image by finding the k most similar faces (images with closet face-features under euclidean distance)
 in its training set, and performing a majority vote (possibly weighted) on their label.
-
 For example, if k=3, and the three closest face images to the given image in the training set are one image of Biden
 and two images of Obama, The result would be 'Obama'.
-
 * This implementation uses a weighted vote, such that the votes of closer-neighbors are weighted more heavily.
-
 Usage:
-
 1. Prepare a set of images of the known people you want to recognize. Organize the images in a single directory
    with a sub-directory for each known person.
-
 2. Then, call the 'train' function with the appropriate parameters. Make sure to pass in the 'model_save_path' if you
    want to save the model to disk so you can re-use the model without having to re-train it.
-
 3. Call 'predict' and pass in your trained model to recognize the people in an unknown image.
-
 NOTE: This example requires scikit-learn to be installed! You can install it with pip:
-
 $ pip3 install scikit-learn
-
 """
 
 import math
@@ -39,18 +29,19 @@ import pickle
 from PIL import Image, ImageDraw
 import face_recognition
 from face_recognition.face_recognition_cli import image_files_in_folder
+import sys
+import hashlib
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'JPG', 'gif', 'GIF', 'PNG', 'JPEG', 'jfif', 'JFIF'}
+
+testDir=sys.argv[1]
 
 
 def train(train_dir, model_save_path=None, n_neighbors=None, knn_algo='ball_tree', verbose=False):
     """
     Trains a k-nearest neighbors classifier for face recognition.
-
     :param train_dir: directory that contains a sub-directory for each known person, with its name.
-
      (View in source code to see train_dir example tree structure)
-
      Structure:
         <train_dir>/
         ├── <person1>/
@@ -61,7 +52,6 @@ def train(train_dir, model_save_path=None, n_neighbors=None, knn_algo='ball_tree
         │   ├── <somename1>.jpeg
         │   └── <somename2>.jpeg
         └── ...
-
     :param model_save_path: (optional) path to save model on disk
     :param n_neighbors: (optional) number of neighbors to weigh in classification. Chosen automatically if not specified
     :param knn_algo: (optional) underlying data structure to support knn.default is ball_tree
@@ -111,7 +101,6 @@ def train(train_dir, model_save_path=None, n_neighbors=None, knn_algo='ball_tree
 def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.6):
     """
     Recognizes faces in given image using a trained KNN classifier
-
     :param X_img_path: path to image to be recognized
     :param knn_clf: (optional) a knn classifier object. if not specified, model_save_path must be specified.
     :param model_path: (optional) path to a pickled knn classifier. if not specified, model_save_path must be knn_clf.
@@ -153,7 +142,6 @@ def predict(X_img_path, knn_clf=None, model_path=None, distance_threshold=0.6):
 def show_prediction_labels_on_image(img_path, predictions):
     """
     Shows the face recognition results visually.
-
     :param img_path: path to image to be recognized
     :param predictions: results of the predict function
     :return:
@@ -178,7 +166,7 @@ def show_prediction_labels_on_image(img_path, predictions):
     del draw
 
     # Display the resulting image
-    pil_image.show()
+    #pil_image.show()
 
 
 if __name__ == "__main__":
@@ -188,19 +176,45 @@ if __name__ == "__main__":
     classifier = train("knn_examples/train", model_save_path="trained_knn_model.clf", n_neighbors=2)
     print("Training complete!")
 
+    try:
+        os.mkdir("output")
+    except FileExistsError:
+        pass
     # STEP 2: Using the trained classifier, make predictions for unknown images
-    for image_file in os.listdir("knn_examples/test"):
-        full_file_path = os.path.join("knn_examples/test", image_file)
+    for image_file in os.listdir(testDir):
+        if os.path.splitext(image_file)[1][1:] in ALLOWED_EXTENSIONS:
+            full_file_path = os.path.join(testDir, image_file)
 
-        print("Looking for faces in {}".format(image_file))
+            print("Looking for faces in {}".format(image_file))
 
-        # Find all people in the image using a trained classifier model
-        # Note: You can pass in either a classifier file name or a classifier model instance
-        predictions = predict(full_file_path, model_path="trained_knn_model.clf")
+            # Find all people in the image using a trained classifier model
+            # Note: You can pass in either a classifier file name or a classifier model instance
+            predictions = predict(full_file_path, model_path="trained_knn_model.clf")
 
-        # Print results on the console
-        for name, (top, right, bottom, left) in predictions:
-            print("- Found {} at ({}, {})".format(name, left, top))
+            # Print results on the console
+            for name, (top, right, bottom, left) in predictions:
+                print("- Found {} at ({}, {})".format(name, left, top))
+                try:
+                    os.mkdir("output/"+name)
+                except FileExistsError:
+                    pass
+                try:
+                    os.mkdir('output/'+name+'/full')
+                except FileExistsError:
+                    pass
 
-        # Display results overlaid on an image
-        show_prediction_labels_on_image(os.path.join("knn_examples/test", image_file), predictions)
+                md5_hash = hashlib.md5()
+                with open(os.path.join(testDir, image_file),'rb') as f:
+                    for byte_block in iter(lambda: f.read(4096),b""):
+                        md5_hash.update(byte_block)
+
+                rimg = Image.open(full_file_path)
+                draw = ImageDraw.Draw(rimg)
+                draw.rectangle([right,top,left,bottom],outline="red")
+                rimg.save("output/"+name+"/full/"+str(md5_hash.hexdigest())+'-full-'+str(left)+'-'+str(top)+'-'+str(right)+'-'+str(bottom)+'-'+image_file,"PNG")
+
+                img = Image.open(full_file_path)
+                nimg = img.crop((left,top,right,bottom))
+                nimg.save("output/"+name+"/"+str(md5_hash.hexdigest())+'-'+str(left)+'-'+str(top)+'-'+str(right)+'-'+str(bottom)+'-'+image_file)
+            # Display results overlaid on an image
+            show_prediction_labels_on_image(os.path.join(testDir, image_file), predictions)
